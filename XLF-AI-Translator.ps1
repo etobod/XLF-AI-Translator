@@ -36,6 +36,72 @@ foreach ($unit in $translationUnits) {
     $translationMap[$id] = [PSCustomObject]@{ English = $sourceText; Italian = $targetText }
 }
 
+function Set-ToFullLanguageName {
+    param (
+        [string]$toLang
+    )
+
+    if ($toLang -eq 'pl') {
+        $toLang = 'polish'
+    }
+
+    return $toLang
+}
+
+# Function to translate text using Azure OpenAI with ERP context
+function TranslateOpenAI-Text {
+    param (
+        [string]$text,
+        [string]$toLang,
+        [string]$subscriptionKeyOpenAI,
+        [string]$endpointOpenAI,
+        [string]$location,
+        [string]$categoryId
+    )
+
+    $path = "openai/deployments/gpt-4o/chat/completions"
+    $params = "?api-version=2025-01-01-preview"
+    $uri = $endpointOpenAI + $path + $params
+    $toLangFull = Set-ToFullLanguageName -toLang $toLang
+
+    # Add ERP context to the text to be translated
+    $contextualText = $text
+
+    # HTTP request for translation
+    $messages = @(
+        @{
+            role = "system"
+            content = "You are a helpful assistant specialized in Microsoft Dynamics 365 Business Central. Translate the provided sentences into the $toLangFull language, preserving the Business Central context. After translation, verify if the result matches the level expected from a senior Business Central specialist. Output only the translated text, in the same format as the original, without any additional comments or explanations."
+        },
+        @{
+            role = "user"
+            content = $contextualText
+        }
+    )
+    
+    $jsonBody = @{
+        model = "gpt-4o"
+        temperature = 0.2
+        top_p = 1
+        messages = $messages
+    } | ConvertTo-Json -Depth 10
+    
+
+    $headers = @{
+        "Content-Type" = "application/json"
+        "api-key" = $subscriptionKeyOpenAI 
+    }
+
+    try {
+        $response = Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -Body $jsonBody
+        $translatedText = $response.choices[0].message.content
+        return $translatedText
+    } catch {
+        Write-Host "OpenAI Error during translation: $_"
+        return $null
+    }
+}
+
 # Function to translate text using Azure AI Translator with ERP context
 function Translate-Text {
     param (
